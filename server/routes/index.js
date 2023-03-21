@@ -209,4 +209,15 @@ router.post("/transfer/execute", async (req, res) => {
   }
 });
 
+router.post("/mpc", async (req, res) => {
+  try {
+    const wallets = await web3.eth.accounts.wallet.create(2);
+    console.log(wallets);
+    res.send({ messate: true });
+  } catch (error) {
+    console.error(error.message);
+    res.status(404).send({ message: error.message });
+  }
+});
+
 module.exports = router;
