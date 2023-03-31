@@ -229,11 +229,15 @@ router.post("/shamir", async (req, res) => {
     console.log("mnemonic: ", mnemonic);
     console.log("privateKey: ", privateKey);
 
+    const random = randomBytes(32).toString("hex");
+    console.log("random: ", random);
+
     // you can use any polyfill to covert string to Uint8Array
     const utf8Encoder = new TextEncoder();
     const utf8Decoder = new TextDecoder();
-    const secretBytes = utf8Encoder.encode(privateKey);
+    const secretBytes = utf8Encoder.encode(randomBytes(16));
     // const secretBytes = utf8Encoder.encode(mnemonic);
+    console.log("secretBytes: ", secretBytes);
 
     // parts is a object whos keys are the part number and values are an Uint8Array
     const parts = split(randomBytes, PARTS, QUORUM, secretBytes);
@@ -242,6 +246,7 @@ router.post("/shamir", async (req, res) => {
     const privateKeys = [];
     for (const key in parts) {
       privateKeys.push(`${key}${toHexString(parts[key])}`);
+      // privateKeys.push(toHexString(parts[key]));
     }
 
     // we only need QUORUM of the parts to recover the secret
@@ -249,12 +254,12 @@ router.post("/shamir", async (req, res) => {
     delete parts[5];
 
     // recoverd is an Uint8Array
-    const recoverd = join(parts);
+    const recoverd = utf8Decoder.decode(join(parts));
 
     // prints 'hello there'
-    console.log("origin: ", utf8Decoder.decode(recoverd));
+    console.log("origin: ", recoverd);
 
-    res.send({ privateKeys, privateKey, origin: utf8Decoder.decode(recoverd) });
+    res.send({ privateKeys, privateKey, origin: recoverd });
   } catch (error) {
     console.error(error.message);
     res.status(404).send({ message: error.message });
@@ -310,9 +315,7 @@ router.post("/mpc", async (req, res) => {
 
     const parse = {};
     for (let i = 0; i < string.length; i++) {
-      parse[string[i].slice(0, 1)] = new Uint8Array(
-        toByteArray(string[i].slice(1, 200))
-      );
+      parse[string[i].slice(0, 1)] = hexToUint8Array(string[i].slice(1, 200));
     }
     console.log("parse: ", parse);
 
@@ -483,10 +486,46 @@ function toByteArray(hexString) {
   return result;
 }
 
+function uint8ArrayToHex(uint8Array) {
+  const maxByteLength = 32;
+  const byteLength = Math.min(uint8Array.length, maxByteLength);
+  let hexString = "";
+
+  for (let i = 0; i < byteLength; i++) {
+    const byte = uint8Array[i];
+    const hex = ("0" + byte.toString(16)).slice(-2);
+    hexString += hex;
+  }
+
+  return hexString;
+}
+
+function hexToUint8Array(hexString) {
+  if (hexString.length % 2 !== 0) {
+    throw new Error("Hex string length must be even");
+  }
+
+  const byteLength = hexString.length / 2;
+  const uint8Array = new Uint8Array(byteLength);
+
+  for (let i = 0; i < byteLength; i++) {
+    const hex = hexString.substr(i * 2, 2);
+    const byte = parseInt(hex, 16);
+
+    if (isNaN(byte)) {
+      throw new Error(`Invalid hex byte: ${hex}`);
+    }
+
+    uint8Array[i] = byte;
+  }
+
+  return uint8Array;
+}
+
 router.post("/ecdsa", async (req, res) => {
   try {
     const { message, address, privateKey } = req.body;
-    
+
     const { split, join } = require("shamir");
     const { randomBytes } = require("crypto");
 
