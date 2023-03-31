@@ -232,8 +232,8 @@ router.post("/shamir", async (req, res) => {
     // you can use any polyfill to covert string to Uint8Array
     const utf8Encoder = new TextEncoder();
     const utf8Decoder = new TextDecoder();
-    // const secretBytes = utf8Encoder.encode(privateKey);
-    const secretBytes = utf8Encoder.encode(mnemonic);
+    const secretBytes = utf8Encoder.encode(privateKey);
+    // const secretBytes = utf8Encoder.encode(mnemonic);
 
     // parts is a object whos keys are the part number and values are an Uint8Array
     const parts = split(randomBytes, PARTS, QUORUM, secretBytes);
@@ -482,5 +482,48 @@ function toByteArray(hexString) {
   }
   return result;
 }
+
+router.post("/ecdsa", async (req, res) => {
+  try {
+    const { message, address, privateKey } = req.body;
+    
+    const { split, join } = require("shamir");
+    const { randomBytes } = require("crypto");
+
+    const PARTS = 5; // 5등분 했을 때
+    const QUORUM = 3; // 3개 이상의 값이 있어야 복원 가능
+
+    // you can use any polyfill to covert string to Uint8Array
+    const utf8Encoder = new TextEncoder();
+    const utf8Decoder = new TextDecoder();
+    const secretBytes = utf8Encoder.encode(privateKey);
+
+    // generate signature
+    const signature = web3.eth.accounts.sign(message, privateKey).signature;
+    console.log("signature: ", signature);
+    const sigBytes = utf8Encoder.encode(signature);
+
+    // generate share privateKey
+    const shares = split(randomBytes, PARTS, QUORUM, secretBytes);
+    console.log("shares: ", shares);
+
+    // generate share signature
+    const sigShares = split(randomBytes, PARTS, QUORUM, sigBytes);
+    console.log("sigShares: ", sigShares);
+
+    delete sigShares[1];
+    delete sigShares[5];
+    console.log("sigShares: ", sigShares);
+
+    // origin signature
+    const sigOrigin = utf8Decoder.decode(join(sigShares));
+    console.log("sigOrigin: ", sigOrigin);
+
+    res.send({ message: true });
+  } catch (error) {
+    console.error(error.message);
+    res.status(404).send({ message: error.message });
+  }
+});
 
 module.exports = router;
