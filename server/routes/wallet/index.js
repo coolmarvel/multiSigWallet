@@ -7,12 +7,30 @@ const bip39 = require("bip39");
 const crypto = require("crypto");
 const { randomBytes } = require("crypto");
 const { split, combine } = require("shamirs-secret-sharing");
-const { ecsign, toRpcSig, ecrecover, keccak256 } = require("ethereumjs-util");
+const util = require("ethereumjs-util");
 
 router.post("/", async (req, res) => {
   try {
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
+
+    const secret = randomBytes(16);
+    console.log("secret: ", secret);
+
+    const buffer = Buffer.from(secret, "hex");
+    console.log("buffer: ", buffer);
+
+    const shares = split(secret, { shares: 2, threshold: 2 });
+    console.log("shares: ", shares);
+
+    const hexs = shares.map((v) => v.toString("hex"));
+    console.log("hexs: ", hexs);
+
+    const buffers = hexs.map((v) => Buffer.from(v, "hex"));
+    console.log("buffers: ", buffers);
+
+    const origin = combine(buffers);
+    console.log("origin: ", origin.toString());
 
     // // RSA 키 생성
     // const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", {
@@ -45,44 +63,56 @@ router.post("/", async (req, res) => {
     // );
     // console.log(verify); // true
 
-    // 이더리움 키 생성
-    // const privateKey = web3.utils.randomHex(32);
-    const privateKey = randomBytes(32);
-    console.log("privateKey: ", privateKey);
-    // const publicKey = keccak256(privateKey);
-    // console.log("publicKey: ", publicKey);
+    res.send({ message: true });
+  } catch (error) {
+    console.error(error.message);
+    res.status(404).send({ message: error.message });
+  }
+});
 
-    // 메시지 생성
-    const message = "Hello, world!";
-    const hash = keccak256(Buffer.from(message));
+router.post("/test", async (req, res) => {
+  try {
+    const { ec: EC } = require("elliptic");
+    const ec = new EC("secp256k1");
+    const privateKey = web3.utils.sha3("secret");
+    console.log("privateKey: ", privateKey);
+
+    const privateKeyBuffer = util.toBuffer(privateKey);
+    console.log("privateKeyBuffer: ", privateKeyBuffer);
+
+    const n = 3; // 전체 조각
+    const k = 2; // 필요한 조각
+
+    const shares = split(privateKey, { shares: n, threshold: k });
+    console.log("shares: ", shares);
+
+    const keys = shares.map((v) => ec.keyFromPrivate(v));
+    console.log("keys: ", keys);
+
+    const message = "hello world";
+    const hash = crypto.createHash("sha256").update(message).digest();
     console.log("hash: ", hash);
 
-    // 서명 분할
-    const m = 3; // 분할된 서명 개수
-    const n = 5; // 총 서명 개수
-    const secret = Buffer.from(privateKey);
-    console.log("secret: ", secret);
-    const shares = split(secret, { shares: n, threshold: m });
-    console.log("shares: ", shares[0]);
-    const pieces = shares.map((share, i) => ({
-      i: i + 1,
-      sig: ecsign(hash, share),
-    }));
-    console.log(pieces);
+    const signatures = [];
+    for (let i = 0; i < k; i++) {
+      const signature = keys[i].sign(hash);
+      const { r, s } = signature;
+      const v = keys[i].getPublic().encode("hex").slice(0, 2) === "04" ? 0 : 1;
+      const result = { r, s, v };
 
-    // 일부 서명 선택
-    const selected = pieces.slice(0, m);
+      signatures.push(result);
+    }
+    console.log("signatures: ", signatures);
 
-    // 선택된 서명으로 서명 결합
-    const rs = selected.map(({ sig }) => [sig.r, sig.s]);
-    const combined = combine(rs);
-    console.log(combined);
+    const vrs = signatures.map((v) => [v.v, v.r, v.s]);
+    console.log("vrs: ", vrs);
 
-    // 서명 검증
-    const rpcSig = toRpcSig(combined.v, combined.r, combined.s);
-    const recoveredPublicKey = keccak256(rpcSig, hash);
-    const verify = publicKey.equals(recoveredPublicKey);
-    console.log(verify); // true
+    const v = 27;
+    const rs = vrs.map(([v, r, s]) => [r, s]);
+    const recoveredPublicKeys = rs.map(([r, s]) =>
+      util.ecrecover(util.hashPersonalMessage(util.toBuffer(hash)), v, r, s)
+    );
+    console.log("recoveredPublicKeys: ", recoveredPublicKeys);
 
     res.send({ message: true });
   } catch (error) {
